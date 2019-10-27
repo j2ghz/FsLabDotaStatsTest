@@ -26,34 +26,50 @@ let toWeekNumber (d:DateTime) =
     d,
     CalendarWeekRule.FirstFourDayWeek,
     DayOfWeek.Monday)
-(**
-Load the data, and transform it to have just number of games per "year/week"
-*)
+
 type OpenDotaPlayerData = JsonProvider<"https://api.opendota.com/api/players/71050296/matches">
 
-let data = OpenDotaPlayerData.Load "https://api.opendota.com/api/players/71050296/matches"
-          |> Array.map (fun m -> 
-            let d = m.StartTime |> toDateTime
-            d.Year,toWeekNumber d)
+let dateToYearWeek (m:OpenDotaPlayerData.Root) =
+  let d = m.StartTime |> toDateTime
+  (d.Year,toWeekNumber d)
+(**
+Make a series out of the data
+*)
+
+let matchesToData (data:OpenDotaPlayerData.Root[]) = 
+          data
+          |> Array.map dateToYearWeek
           |> Array.countBy id
           |> Array.where (fun ((y,_),_) -> (y = 2019))
           |> Array.map (fun ((y,w),c) -> (sprintf "%i/%i" y w , c))
+          |> Array.sortBy fst
           |> Array.toList
-
 (**
-The data in the table:
+Load the data, and transform it to have just number of games per "year/week"
 *)
-(*** define-output:series ***)
-let dataSeries =
-  data
-  |> series
-dataSeries
-(*** include-it:series ***)
+
+let j2ghz = OpenDotaPlayerData.Load "https://api.opendota.com/api/players/71050296/matches" |> matchesToData
+let artic = OpenDotaPlayerData.Load "https://api.opendota.com/api/players/101483335/matches" |> matchesToData
+let simik = OpenDotaPlayerData.Load "https://api.opendota.com/api/players/94313396/matches" |> matchesToData
+let data = [artic;j2ghz;simik]
+
 
 (**
 And in a chart:
 *)
 (*** define-output:chart ***)
-dataSeries
-|> Chart.Column
+data
+|> Chart.Area
+|> Chart.WithOptions (Options( isStacked = true ))
+|> Chart.WithLabels [ "ArticCz"; "J2ghz"; "ssimik"]
+|> Chart.WithLegend true
 (*** include-it:chart ***)
+(**
+Win rate compared to match length
+--------------------------------
+*)
+(*** define-output:w ***)
+OpenDotaPlayerData.Load "https://api.opendota.com/api/players/71050296/matches"
+|> Array.map (fun m -> m.Duration,if m.Deaths > 0 then (m.Kills |> double) / (m.Deaths|> double) else m.Kills |> double)
+|> Chart.Scatter
+(*** include-it:w ***)
